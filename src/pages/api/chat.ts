@@ -1,4 +1,6 @@
 // pages/api/chat.ts
+console.log("GEMINI_API_KEY:", process.env.GEMINI_API_KEY);
+
 import type { NextApiRequest, NextApiResponse } from "next";
 
 type Data = {
@@ -44,4 +46,5 @@ export default async function handler(
     console.error(err);
     res.status(500).json({ error: "Failed to fetch from Gemini" });
   }
+
 }
