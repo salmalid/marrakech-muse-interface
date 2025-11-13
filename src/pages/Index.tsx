@@ -36,29 +36,47 @@ const Index = () => {
     scrollToBottom();
   }, [messages]);
 
-  const handleSend = () => {
-    if (!input.trim()) return;
+const handleSend = async () => {
+  if (!input.trim()) return;
 
-    const userMessage: Message = {
-      role: "user",
-      content: input,
+  const userMessage: Message = {
+    role: "user",
+    content: input,
+    timestamp: new Date(),
+  };
+
+  // Show user's message
+  setMessages((prev) => [...prev, userMessage]);
+  setInput("");
+
+  try {
+    // Call our backend API
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: userMessage.content }),
+    });
+
+    const data = await res.json();
+
+    const assistantMessage: Message = {
+      role: "assistant",
+      content: data.reply || "Sorry, I couldn't generate a response.",
       timestamp: new Date(),
     };
 
-    setMessages((prev) => [...prev, userMessage]);
-    setInput("");
+    setMessages((prev) => [...prev, assistantMessage]);
+    setShowSuggestions(true);
+  } catch (err) {
+    const errorMessage: Message = {
+      role: "assistant",
+      content: "Error: failed to connect to Gemini API.",
+      timestamp: new Date(),
+    };
+    setMessages((prev) => [...prev, errorMessage]);
+  }
+};
 
-    // Simulate AI response
-    setTimeout(() => {
-      const assistantMessage: Message = {
-        role: "assistant",
-        content: "I'd be delighted to help you with that! Let me show you some wonderful options that match your preferences. 🏰✨",
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, assistantMessage]);
-      setShowSuggestions(true);
-    }, 1000);
-  };
 
   const mockSuggestions = [
     {
