@@ -1,7 +1,7 @@
 // api/chat.ts
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-// City-specific recommendations
+// City-specific recommendations (keeping as context for Gemini)
 const cityRecommendations: Record<string, any> = {
   casablanca: {
     restaurants: [
@@ -131,22 +131,10 @@ const cityRecommendations: Record<string, any> = {
   }
 };
 
-// Cuisine-specific recommendations
-const cuisineRecommendations: Record<string, string> = {
-  italian: "For authentic Italian cuisine in Morocco, I recommend La Trattoria Italiana in Casablanca or Café Arabe in Marrakech. Both offer excellent pasta, pizza, and risotto. Which city are you visiting?",
-  french: "Morocco has excellent French restaurants! In Casablanca, try Ty Potes or Paul. In Marrakech, La Table du Marché is wonderful. Would you like recommendations for a specific city?",
-  moroccan: "For traditional Moroccan cuisine, you can't go wrong with tajines and couscous! Each city has its specialties - Marrakech has excellent rooftop restaurants like Nomad, while Fes is famous for its medina eateries. Which city interests you?",
-  seafood: "Morocco's coastal cities offer amazing seafood! In Casablanca, try La Sqala. In Essaouira, the fish market stalls grill fresh catches daily. Tangier's Le Saveur du Poisson is also excellent. Which coastal city are you near?",
-  international: "Morocco has diverse international dining options in major cities. Casablanca and Marrakech have the widest selection including Italian, French, Asian, and more. What type of cuisine are you craving?",
-  vegetarian: "Many Moroccan restaurants offer excellent vegetarian options like vegetable tajines, couscous, and salads. Le Jardin in Marrakech and Earth Café are great vegetarian-friendly spots. Which city will you be visiting?",
-  asian: "For Asian cuisine, major cities like Casablanca and Marrakech have Japanese, Thai, and Chinese options. Would you like specific recommendations for a particular city?"
-};
-
-// Helper function to detect intent
+// Helper function to detect city and type
 function analyzeMessage(message: string) {
   const lower = message.toLowerCase();
   
-  // Detect city
   let city = '';
   for (const cityName of Object.keys(cityRecommendations)) {
     if (lower.includes(cityName)) {
@@ -155,7 +143,6 @@ function analyzeMessage(message: string) {
     }
   }
   
-  // Detect type (restaurant, hotel, cafe, attraction)
   let type = '';
   if (lower.includes('restaurant') || lower.includes('eat') || lower.includes('food') || lower.includes('dining')) {
     type = 'restaurants';
@@ -167,60 +154,78 @@ function analyzeMessage(message: string) {
     type = 'attractions';
   }
   
-  // Detect cuisine
-  let cuisine = '';
-  for (const cuisineType of Object.keys(cuisineRecommendations)) {
-    if (lower.includes(cuisineType)) {
-      cuisine = cuisineType;
-      break;
-    }
-  }
-  
-  return { city, type, cuisine };
+  return { city, type };
 }
 
-// Generate response based on detected intent
-function generateResponse(city: string, type: string, cuisine: string): string {
-  // If cuisine is specified
-  if (cuisine && !city) {
-    return cuisineRecommendations[cuisine];
-  }
+// Call Gemini API
+async function callGeminiAPI(userMessage: string, context: string): Promise<string> {
+  const apiKey = process.env.GEMINI_API_KEY;
   
-  // If city and type are specified
-  if (city && type && cityRecommendations[city]?.[type]) {
-    const recommendations = cityRecommendations[city][type];
-    const capitalizedCity = city.charAt(0).toUpperCase() + city.slice(1);
-    const typeLabel = type.charAt(0).toUpperCase() + type.slice(1, -1); // Remove 's' and capitalize
-    
-    let response = `Great choice! Here are some excellent ${type} in ${capitalizedCity}:\n\n`;
-    recommendations.forEach((rec: string, index: number) => {
-      response += `${index + 1}. ${rec}\n\n`;
+  if (!apiKey) {
+    throw new Error('GEMINI_API_KEY not configured');
+  }
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+  
+  const systemPrompt = `You are a helpful Morocco travel assistant. You help tourists find restaurants, hotels, cafes, and attractions in Morocco.
+
+IMPORTANT INSTRUCTIONS:
+1. Use the provided context data as your primary source of information
+2. If the user asks about something NOT in the context (like Indian restaurants in Casablanca), you can suggest alternatives or be creative with fictional but realistic recommendations
+3. Always format responses in a friendly, helpful way
+4. Include emojis where appropriate (🍽️, 🏨, ☕, 🎭, 📍, 📞)
+5. Keep responses concise but informative
+6. When providing fictional recommendations, make them sound realistic with addresses and phone numbers in Moroccan format (+212-xxx-xxx-xxx)
+
+Context data:
+${context}`;
+
+  const payload = {
+    contents: [
+      {
+        parts: [
+          {
+            text: `${systemPrompt}\n\nUser question: ${userMessage}`
+          }
+        ]
+      }
+    ],
+    generationConfig: {
+      temperature: 0.7,
+      topK: 40,
+      topP: 0.95,
+      maxOutputTokens: 1024,
+    }
+  };
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload)
     });
-    response += `Would you like more details about any of these, or recommendations for something else in ${capitalizedCity}?`;
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('Gemini API error:', errorData);
+      throw new Error(`Gemini API error: ${response.status}`);
+    }
+
+    const data = await response.json();
     
-    return response;
+    // Extract the generated text
+    if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
+      return data.candidates[0].content.parts[0].text;
+    }
+    
+    throw new Error('Unexpected response format from Gemini API');
+    
+  } catch (error) {
+    console.error('Error calling Gemini API:', error);
+    throw error;
   }
-  
-  // If only city is specified
-  if (city && !type) {
-    const capitalizedCity = city.charAt(0).toUpperCase() + city.slice(1);
-    return `${capitalizedCity} is a wonderful city! I can help you find:\n\n🍽️ Restaurants - from traditional Moroccan to international cuisine\n🏨 Hotels & Riads - luxury stays to budget-friendly options\n☕ Cafés - perfect spots to relax and enjoy Moroccan coffee\n🎭 Attractions - must-see sights and experiences\n\nWhat would you like to explore in ${capitalizedCity}?`;
-  }
-  
-  // If only type is specified
-  if (type && !city) {
-    const typeLabel = type.charAt(0).toUpperCase() + type.slice(1);
-    return `I'd love to help you find great ${type} in Morocco! Which city are you interested in?\n\n📍 Popular cities: Casablanca, Marrakech, Fes, Rabat, Tangier, Essaouira\n\nEach city has its own unique character and excellent options!`;
-  }
-  
-  // If cuisine and city are both specified
-  if (cuisine && city && cityRecommendations[city]?.restaurants) {
-    const capitalizedCity = city.charAt(0).toUpperCase() + city.slice(1);
-    return `For ${cuisine} cuisine in ${capitalizedCity}, I recommend checking out the restaurant scene there. ${cuisineRecommendations[cuisine] || 'Let me know if you\'d like specific recommendations!'}`;
-  }
-  
-  // Default greeting/help message
-  return `Marhaba! 🌟 I'd love to help you discover the perfect spot in Morocco!\n\nI can help you find:\n🍽️ Restaurants (Moroccan, Italian, French, seafood, and more)\n🏨 Hotels & Riads\n☕ Cafés\n🎭 Attractions\n\nJust tell me:\n- Which city? (Casablanca, Marrakech, Fes, Rabat, Tangier, Essaouira)\n- What are you looking for?\n\nFor example: "Italian restaurant in Casablanca" or "hotels in Marrakech"`;
 }
 
 export default async function handler(
@@ -250,16 +255,50 @@ export default async function handler(
 
   console.log('📝 User message:', message);
 
-  // Analyze the message to detect intent
-  const { city, type, cuisine } = analyzeMessage(message);
-  console.log('🔍 Detected - City:', city, 'Type:', type, 'Cuisine:', cuisine);
+  try {
+    // Analyze the message to get relevant context
+    const { city, type } = analyzeMessage(message);
+    console.log('🔍 Detected - City:', city, 'Type:', type);
 
-  // Simulate a slight delay for natural feel
-  await new Promise(resolve => setTimeout(resolve, 300));
+    // Prepare context based on detected city and type
+    let context = '';
+    if (city && type && cityRecommendations[city]?.[type]) {
+      context = `${city.toUpperCase()} - ${type.toUpperCase()}:\n`;
+      cityRecommendations[city][type].forEach((rec: string) => {
+        context += `- ${rec}\n`;
+      });
+    } else if (city) {
+      // Include all data for that city
+      context = `${city.toUpperCase()} RECOMMENDATIONS:\n`;
+      Object.entries(cityRecommendations[city]).forEach(([category, items]) => {
+        context += `\n${category.toUpperCase()}:\n`;
+        (items as string[]).forEach((item: string) => {
+          context += `- ${item}\n`;
+        });
+      });
+    } else {
+      // Include overview of all cities
+      context = 'MOROCCO TRAVEL RECOMMENDATIONS:\n\n';
+      Object.entries(cityRecommendations).forEach(([cityName, cityData]) => {
+        context += `${cityName.toUpperCase()}:\n`;
+        Object.entries(cityData).forEach(([category, items]) => {
+          context += `${category}: ${(items as string[]).length} options available\n`;
+        });
+        context += '\n';
+      });
+    }
 
-  // Generate appropriate response
-  const reply = generateResponse(city, type, cuisine);
-  
-  console.log('✅ Sending response');
-  return res.status(200).json({ reply });
+    // Call Gemini API
+    const reply = await callGeminiAPI(message, context);
+    
+    console.log('✅ Gemini response received');
+    return res.status(200).json({ reply });
+    
+  } catch (error) {
+    console.error('❌ Error:', error);
+    return res.status(500).json({ 
+      error: 'Failed to generate response',
+      reply: 'Sorry, I encountered an error. Please try again later.'
+    });
+  }
 }
