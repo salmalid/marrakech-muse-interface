@@ -165,8 +165,8 @@ async function callGeminiAPI(userMessage: string, context: string): Promise<stri
     throw new Error('GEMINI_API_KEY not configured');
   }
 
-  // Use v1 API with correct model name
-  const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
+  // Use v1beta API with gemini-2.5-flash
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
   
   const systemPrompt = `You are a helpful Morocco travel assistant. You help tourists find restaurants, hotels, cafes, and attractions in Morocco.
 
