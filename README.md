@@ -30,7 +30,7 @@ The ultimate objective is to deploy a **custom prompt-engineered Mistral model**
 This project is built with:
 - **Frontend**: React + TypeScript + Vite
 - **Styling**: Tailwind CSS + shadcn-ui
-- **AI/NLP**: Google Gemini API (temporary) → Mistral Model (planned)
+- **AI/NLP**: Google Gemini API (temporary) → Mistral Model (working on deployment)
 - **Deployment**: Vercel (API) + Lovable (Frontend)
 
 ---
@@ -89,4 +89,4 @@ This is an academic project. Suggestions and improvements are welcome!
 
 This project is part of a Master's degree program in NLP.
 
-## Made with LOVE by : SALMA LIDAME
+## Made by : SALMA LIDAME
